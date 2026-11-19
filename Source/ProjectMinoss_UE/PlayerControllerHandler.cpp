@@ -3,15 +3,36 @@
 
 #include "PlayerControllerHandler.h"
 
+
+APlayerControllerHandler::APlayerControllerHandler()
+{
+	bShouldPerformFullTickWhenPaused = true;
+}
+
 void APlayerControllerHandler::BeginPlay()
 {
 	Super::BeginPlay();
+	
+	if (!IsLocalController())
+	{
+
+		return;
+	}
 	
 	if (!DefaultMappingContext)
 	{
 
 		UE_LOGFMT(LogTemp, Error, "{0} : DefaultMappingContext non assigné", GetName());
 		return;
+	}
+	
+	// Plus besoin de remonter Pawn -> Controller : on EST le controller
+	if (UEnhancedInputLocalPlayerSubsystem* Subsystem =
+	ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>
+	(GetLocalPlayer()))
+	{
+
+		Subsystem->AddMappingContext(DefaultMappingContext, 0);
 	}
 }
 

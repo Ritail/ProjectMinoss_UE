@@ -5,6 +5,8 @@
 #include "CoreMinimal.h"
 #include "InputMappingContext.h"
 #include "EnhancedInputComponent.h"
+#include "InputAction.h"
+#include "EnhancedInputSubsystems.h"
 #include "GameFramework/PlayerController.h"
 #include "PlayerControllerHandler.generated.h"
 
@@ -30,5 +32,7 @@ protected:
 	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> PauseAction;
+public:
+	APlayerControllerHandler();
 	
 };

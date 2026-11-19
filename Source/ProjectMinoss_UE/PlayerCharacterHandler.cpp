@@ -62,7 +62,11 @@ void APlayerCharacterHandler::SetupPlayerInputComponent(UInputComponent* PlayerI
 		Input->BindAction(RunAction, ETriggerEvent::Triggered,this,&APlayerCharacterHandler::PlayerRun);
 		Input->BindAction(LookAction, ETriggerEvent::Triggered,this,&APlayerCharacterHandler::PlayerLook);
 		Input->BindAction(CrouchAction, ETriggerEvent::Triggered,this,&APlayerCharacterHandler::PlayerCrouch);
-		// Input->BindAction(InteractAction, ETriggerEvent::Triggered,this,&APlayerCharacterHandler::Interacte);
+		Input->BindAction(InteractAction, ETriggerEvent::Triggered,this,&APlayerCharacterHandler::Interacte);
+	}
+	else
+	{
+		UE_LOGFMT(LogTemp, Warning, "Don't IMC");
 	}
 }
 
@@ -139,7 +143,6 @@ AActor* APlayerCharacterHandler::FindInteractable() const
 	AActor* HitActor = Hit.GetActor();
 	if (!HitActor || !HitActor->Implements<UInteractable>())
 	{
-	
 		return nullptr;
 	}
 	
@@ -155,9 +158,7 @@ bool APlayerCharacterHandler::TraceFromCamera(float Range, FHitResult& OutHit) c
 {
 	if (!Camera || !SpringArm)
 	{
-
 		return false;
-
 	}
 	// Le rayon part de la caméra, derrière Megan : on ajoute la longueurdu bras
 
@@ -167,7 +168,6 @@ bool APlayerCharacterHandler::TraceFromCamera(float Range, FHitResult& OutHit) c
 	FCollisionQueryParams Params;
 	Params.AddIgnoredActor(this);
 	const bool bHit = GetWorld()->LineTraceSingleByChannel(OutHit, Start,
-
 	End, ECC_Interaction, Params);
 
 	DrawDebugLine(GetWorld(), Start, End, bHit ? FColor::Green :
@@ -180,7 +180,6 @@ void APlayerCharacterHandler::Interacte()
 {
 	if (AActor* Target = FindInteractable())
 	{
-		
 		IInteractable::Execute_Interact(Target, this);
 	}
 }
