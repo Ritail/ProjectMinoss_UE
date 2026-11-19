@@ -1,38 +1,30 @@
 // BTDecorator_ChaseGate.cpp
 #include "BTDecorator_ChaseGate.h"
-#include "EnemyCharacter.h"
 #include "EnemyAIController.h"
-#include "StatusEffectComponent.h"
-#include "EnemyGameplayTags.h"
 #include "AIBlackboardKeys.h"
 #include "BehaviorTree/BlackboardComponent.h"
+#include "GameFramework/Actor.h"
 
 UBTDecorator_ChaseGate::UBTDecorator_ChaseGate()
 {
 	NodeName = TEXT("Chase Gate");
-	// Do not observe BB — this is a per-tick query against cached state.
-	bNotifyBecomeRelevant  = false;
-	bNotifyCeaseRelevant   = false;
-	bNotifyTick            = false;
+
+	// Observe TargetActor. The engine only re-evaluates a higher-priority
+	// branch when something it observes changes. The old tick-based gate only
+	// requested re-evaluation when it turned false, so a Chase branch that
+	// became valid while Patrol was running never interrupted Patrol.
+	// Abort on the node must be Both or Lower Priority.
+	BlackboardKey.SelectedKeyName = BBKeys::TargetActor;
+	BlackboardKey.AddObjectFilter(
+		this,
+		GET_MEMBER_NAME_CHECKED(UBTDecorator_ChaseGate, BlackboardKey),
+		AActor::StaticClass());
 }
 
 bool UBTDecorator_ChaseGate::CalculateRawConditionValue(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory) const
 {
 	const AEnemyAIController* AIC = Cast<AEnemyAIController>(OwnerComp.GetAIOwner());
-	if (!AIC) return false;
-
-	UBlackboardComponent* BB = OwnerComp.GetBlackboardComponent();
-	if (!BB) return false;
-
-	// HasTarget
-	if (!BB->GetValueAsObject(BBKeys::TargetActor)) return false;
-
-	// CanSee || HasOverload
-	if (AIC->CanSeeTarget()) return true;
-
-	const AEnemyCharacter* Enemy = AIC->GetEnemyCharacter();
-	return Enemy && Enemy->GetStatusComponent() &&
-		   Enemy->GetStatusComponent()->HasStatus(EnemyTags::Status_SoundOverload);
+	return AIC && AIC->IsPursuing();
 }
 
 FString UBTDecorator_ChaseGate::GetStaticDescription() const

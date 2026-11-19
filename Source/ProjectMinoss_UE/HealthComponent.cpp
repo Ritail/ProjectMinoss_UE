@@ -12,3 +12,10 @@ void UHealthComponent::Die(AActor* Killer)
 	bDead = true;
 	OnDied.Broadcast(Killer);
 }
+
+void UHealthComponent::Revive()
+{
+	if (!bDead) return;
+	bDead = false;
+	OnRevived.Broadcast();
+}

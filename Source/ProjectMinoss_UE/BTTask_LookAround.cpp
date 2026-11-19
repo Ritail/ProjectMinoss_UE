@@ -55,10 +55,18 @@ void UBTTask_LookAround::TickTask(
     const float Alpha     = Memory->ElapsedTime / Memory->Duration;
     const float YawOffset = SweepAngleDegrees * FMath::Sin(2.f * PI * Alpha);
 
-    Pawn->SetActorRotation(FRotator(
+    const FRotator SweepRot(
         Memory->StartRotation.Pitch,
         Memory->StartRotation.Yaw + YawOffset,
-        Memory->StartRotation.Roll));
+        Memory->StartRotation.Roll);
+
+    // Set both. The pawn turns for characters that do not use controller yaw.
+    // The controller keeps the sweep from being overwritten on characters that do.
+    Pawn->SetActorRotation(SweepRot);
+    if (AIC)
+    {
+        AIC->SetControlRotation(SweepRot);
+    }
 }
 
 FString UBTTask_LookAround::GetStaticDescription() const

@@ -14,8 +14,8 @@ class PROJECTMINOSS_UE_API UBTService_UpdateStateTag : public UBTService
 	public:
 	UBTService_UpdateStateTag();
 
-	/** Tag to write into the StateTag key when this branch becomes active. */
-	UPROPERTY(EditAnywhere, Category="State")
+	/** State to write when this branch becomes active. Limited to AI.State tags. */
+	UPROPERTY(EditAnywhere, Category="State", meta=(Categories="AI.State"))
 	FGameplayTag StateTag;
 
 	virtual void OnBecomeRelevant(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory) override;

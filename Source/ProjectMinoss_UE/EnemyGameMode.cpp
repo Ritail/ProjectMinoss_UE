@@ -91,8 +91,10 @@ void AEnemyGameMode::ResetGame()
     OnGameReset.Broadcast();
 }
 
-void AEnemyGameMode::ResetPlayerAndWorld_Implementation(APawn* /*PlayerPawn*/)
+void AEnemyGameMode::ResetPlayerAndWorld_Implementation(APawn* PlayerPawn)
 {
-    // Override in a BP subclass for inventory / world-item reset.
-    // Stub here so the call site in ResetGame stays clean.
+    if (UHealthComponent* Health = PlayerPawn ? PlayerPawn->FindComponentByClass<UHealthComponent>() : nullptr)
+    {
+        Health->Revive();
+    }
 }

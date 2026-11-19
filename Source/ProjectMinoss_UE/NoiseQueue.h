@@ -3,6 +3,8 @@
 
 #include "CoreMinimal.h"
 
+class AActor;
+
 struct FNoiseRecord
 {
 	FVector Location = FVector::ZeroVector;

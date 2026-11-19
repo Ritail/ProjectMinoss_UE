@@ -1,10 +1,6 @@
 // BTService_UpdateStateTag.cpp
 #include "BTService_UpdateStateTag.h"
-#include "EnemyCharacter.h"
 #include "EnemyAIController.h"
-#include "AIBlackboardKeys.h"
-#include "BlackboardKeyType_GameplayTag.h"
-#include "BehaviorTree/BlackboardComponent.h"
 
 UBTService_UpdateStateTag::UBTService_UpdateStateTag()
 {
@@ -20,17 +16,12 @@ void UBTService_UpdateStateTag::OnBecomeRelevant(UBehaviorTreeComponent& OwnerCo
 {
 	Super::OnBecomeRelevant(OwnerComp, NodeMemory);
 
-	UBlackboardComponent* BB = OwnerComp.GetBlackboardComponent();
-	if (!BB) return;
+	if (!StateTag.IsValid()) return;
 
-	BB->SetValue<UBlackboardKeyType_GameplayTag>(BBKeys::StateTag, StateTag);
-
-	if (const AEnemyAIController* AIC = Cast<AEnemyAIController>(OwnerComp.GetAIOwner()))
+	// The controller owns state changes: it writes the key and recalculates speed.
+	if (AEnemyAIController* AIC = Cast<AEnemyAIController>(OwnerComp.GetAIOwner()))
 	{
-		if (AEnemyCharacter* Enemy = AIC->GetEnemyCharacter())
-		{
-			Enemy->RecalculateMovementStats();
-		}
+		AIC->SetAIState(StateTag);
 	}
 }
 

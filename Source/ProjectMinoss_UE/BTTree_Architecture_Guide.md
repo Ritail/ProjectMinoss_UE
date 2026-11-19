@@ -119,13 +119,13 @@ The controller also exposes `CanSeeTarget()`, a cached boolean that decorators a
 
 The behavior tree asset is authored in the editor, not in code. The nodes below are the custom building blocks it is made from.
 
-**BTDecorator_ChaseGate.h / .cpp.** Allows a branch to run only while the enemy is in pursuit. The condition is: a TargetActor exists, and either the controller can see the target or SoundOverload is active. It is a per-tick query against cached state and does not observe Blackboard changes.
+**BTDecorator_ChaseGate.h / .cpp.** Allows a branch to run only while the enemy is in pursuit. The condition is: a TargetActor exists, and either the controller can see the target or SoundOverload is active. It is a Blackboard decorator that observes `TargetActor`, so the engine re-evaluates the gate the moment a target is acquired or lost. Abort must be set to Both or Lower Priority on the node, or the gate cannot interrupt Patrol or Investigate. The check itself calls `AEnemyAIController::IsPursuing()`.
 
 **BTDecorator_HasStatusTag.h / .cpp.** A generic decorator that passes if the enemy has a given status tag. A checkbox inverts the result. Use it to gate a branch on Stunned, Blinded, or any other status.
 
 **BTDecorator_ZoneNotCompleted.h / .cpp.** Passes while a zone is not yet completed. It uses its own override tag if one is set. Otherwise it reads the zone from the actor in `CurrentPatrolPoint`. If the zone cannot be determined, it passes, so an unknown zone can never trap the enemy.
 
-**BTService_UpdateStateTag.h / .cpp.** A service, a node that runs alongside its branch, that writes a configured tag into `StateTag` when its branch becomes relevant, then recalculates movement speed. It has no interval, so it runs only on activation, not every tick. This is how the enemy switches between Patrol, Chase, Search, and Investigate.
+**BTService_UpdateStateTag.h / .cpp.** A service, a node that runs alongside its branch, that asks the controller to write a configured tag into `StateTag` when its branch becomes relevant. The controller's `SetAIState` writes the key and recalculates movement speed. It has no interval, so it runs only on activation, not every tick. This is how the enemy switches between Patrol, Chase, Search, and Investigate.
 
 **BTS_UpdateLastKnownLocation.h / .cpp.** A service that runs every tick while its branch is active. If a TargetActor exists and the controller can see the target, or SoundOverload is active, it writes the target's current position into `LastKnownLocation`. The Search state relies on this key to know where to go.
 
@@ -183,7 +183,7 @@ The Try Kill Player task checks kill range. With no montage it kills immediately
 
 ### 5.7 Full reset
 
-The game mode's `ResetGame` runs in this order. First, the controller's `PrepareForReset` stops the tree in Safe mode, stops movement, clears statuses with the Reset reason, clears the noise queue, forgets perception, clears Blackboard keys except home location, sets the state to Patrol, teleports the enemy home, and resets the patrol index. Second, the player is teleported to the spawn pose and `ResetPlayerAndWorld` runs. Third, the zone subsystem's `Reset` clears completed zones. Fourth, the controller's `ResumeAfterReset` restarts the tree. Last, `OnGameReset` is broadcast. The tree restarts after zones are cleared so patrol sees a fresh state, and the broadcast comes last so UI and effects see a finished reset.
+The game mode's `ResetGame` runs in this order. First, the controller's `PrepareForReset` stops the tree in Safe mode, stops movement, clears Blackboard keys except home location, sets the state to Patrol (which also recalculates speed), clears statuses with the Reset reason, clears the noise queue, forgets perception, teleports the enemy home, and resets the patrol index. Second, the player is teleported to the spawn pose and `ResetPlayerAndWorld` runs. Third, the zone subsystem's `Reset` clears completed zones. Fourth, the controller's `ResumeAfterReset` restarts the tree. Last, `OnGameReset` is broadcast. The tree restarts after zones are cleared so patrol sees a fresh state, and the broadcast comes last so UI and effects see a finished reset.
 
 ---
 
@@ -378,13 +378,13 @@ Blackboard memory is not cleared by restarting the tree. `PrepareForReset` clear
 
 These items come from reading the source. Each is a point where the code behaves differently from what a reader would expect, or does not yet do what its comments describe. None of them stops the system from building, but a new developer should know about them before relying on the affected behavior.
 
-**The player's death resets the world only once.** UHealthComponent sets `bDead` to true in `Die` and never sets it back. Nothing in the code clears it on reset. After the first death, every later call to `Die` returns early, so the game mode is never notified and the reset does not happen again. Fix this by adding a method that clears `bDead`, and calling it from the game mode's reset sequence or the player's respawn logic.
+**Player death resets the world on every death.** `UHealthComponent::Die` sets `bDead`, and `Revive()` clears it. The game mode calls `Revive` from `ResetPlayerAndWorld_Implementation`, so each death triggers a reset. A Blueprint that overrides that function should call the parent or call `Revive` itself.
 
 **The death binding is set only at startup.** AEnemyGameMode subscribes to the player pawn's HealthComponent in StartPlay. If the player pawn is replaced later, for example by a respawn that spawns a new pawn, the subscription is lost and death will not trigger a reset. Re-bind when the pawn changes.
 
-**A dodged kill still reports success.** In BTTask_TryKillPlayer, when the range re-check after the montage fails, ApplyKill returns without killing. The montage-ended handler then finishes the task as Succeeded, so the behavior tree treats the attempt as completed. Finishing with Failed in that case would be more accurate. There is a related gap: if the montage is interrupted, the handler unbinds and returns without finishing the task, so the task only ends when the tree aborts it.
+**A dodged, interrupted, or failed-to-start kill is handled.** `BTTask_TryKillPlayer` finishes with Failed when the target leaves range during the wind-up or the montage is interrupted. If the montage cannot start, the kill lands immediately and the task succeeds. The task finishes before it kills, because a kill can reset the world and stop this tree.
 
-**The overload flag is never cleared.** UNoiseQueueComponent sets `bOverloaded` when the queue triggers. Its comment says the controller clears it when SoundOverload is removed, but the controller does not call `Clear` at that point. `Clear` would also wipe the noise queue and the investigate location, which is wrong on status expiry anyway. As a result, `IsOverloaded()` stays true after the first overload until a reset. Nothing in the code reads that method today, so the bug has no visible effect yet. Either clear the flag on expiry or remove the method.
+**The overload flag is cleared when overload ends.** `UNoiseQueueComponent` sets `bOverloaded` on trigger, and the controller calls `ClearOverloadFlag()` when SoundOverload is removed. The trigger also invalidates the investigate point, so the enemy does not walk to the noise that caused an overload after the chase ends.
 
 **Rage needs more zones than a reader might expect.** The threshold is the ceiling of the total zone count times 0.6667. With three zones that is 3, so all zones must be completed. With six zones it is 5. If the design intends two-thirds, adjust the ratio or the rounding to match.
 
@@ -392,9 +392,9 @@ These items come from reading the source. Each is a point where the code behaves
 
 **The reset runs inside a behavior tree task.** A kill can start inside a tree task. That task calls Kill, which calls Die, which notifies the game mode, which stops the same tree that is running the task. Stopping in Safe mode is meant to handle this, but the path is easy to break if the kill is moved or made asynchronous. Test resets thoroughly after changing the kill task.
 
-**Stun restart assumes the tree asset exists.** The stun removal handler restarts the tree by dereferencing BehaviorTreeAsset with no null check. OnPossess guards against a missing asset, but this handler does not.
+**Stun restart is guarded.** The stun removal handler checks `BehaviorTreeAsset` before it restarts the tree.
 
-**Enemy reset uses a plain location set.** PrepareForReset moves the enemy home with SetActorLocation. For a character with a movement component, a teleport call is usually safer because it keeps movement state consistent. This has not been reported as a problem, but check it when the enemy's home is in a tight space.
+**Enemy reset teleports.** `PrepareForReset` moves the enemy home with `TeleportTo`, which keeps movement state consistent. Check the home position if it sits in a tight space.
 
 **Some file names do not match their classes.** The file BTS_UpdateLastKnownLocation.h declares UBTService_UpdateLastKnownLocation. Unreal accepts this, but searching for a class name will not find the file. Consider renaming files to match their classes, or document the convention for the team.
 

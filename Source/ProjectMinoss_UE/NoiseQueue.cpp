@@ -1,6 +1,10 @@
 // NoiseQueue.cpp
 #include "NoiseQueue.h"
 
+#if WITH_DEV_AUTOMATION_TESTS
+#include "Misc/AutomationTest.h"
+#endif
+
 void FNoiseQueue::Configure(int32 InThreshold, double InWindowSeconds)
 {
 	Threshold     = FMath::Max(1, InThreshold);
@@ -19,6 +23,7 @@ void FNoiseQueue::PurgeExpired(double Now)
 	Records.RemoveAll([Cutoff](const FNoiseRecord& R) { return R.TimeStamp < Cutoff; });
 }
 
+#if WITH_DEV_AUTOMATION_TESTS
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNoiseQueueTest, "Enemy.NoiseQueue", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 bool FNoiseQueueTest::RunTest(const FString&)
 {
@@ -33,3 +38,4 @@ bool FNoiseQueueTest::RunTest(const FString&)
 	TestEqual(TEXT("All should expire at t=10"), Q.Num(), 0);
 	return true;
 }
+#endif

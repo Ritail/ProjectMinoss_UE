@@ -8,6 +8,7 @@
 #include "PuzzleZoneSubsystem.h"
 #include "AIBlackboardKeys.h"
 #include "BlackboardKeyType_GameplayTag.h"
+#include "Killable.h"
 #include "PatrolRouteComponent.h"
 #include "BehaviorTree/BehaviorTree.h"
 #include "BehaviorTree/BehaviorTreeComponent.h"
@@ -21,17 +22,19 @@
 
 AEnemyAIController::AEnemyAIController()
 {
-    // Perceiver setup
     UAIPerceptionComponent* Perc = CreateDefaultSubobject<UAIPerceptionComponent>(TEXT("Perception"));
     SetPerceptionComponent(*Perc);
-    
-    CreateDefaultSubobject<UNoiseQueueComponent>(TEXT("NoiseQueue"));
+
+    NoiseQueueComp = CreateDefaultSubobject<UNoiseQueueComponent>(TEXT("NoiseQueue"));
 
     UAISenseConfig_Sight* Sight = CreateDefaultSubobject<UAISenseConfig_Sight>(TEXT("SightConfig"));
+    // Neutrals stay detected on purpose. A pawn with no team ID is NoTeam, which
+    // the perception system treats as neutral, so turning this off would also
+    // hide the player. Non-killable neutrals are filtered in the perception handler.
     Sight->DetectionByAffiliation.bDetectEnemies    = true;
     Sight->DetectionByAffiliation.bDetectNeutrals   = true;
     Sight->DetectionByAffiliation.bDetectFriendlies = false;
-    Sight->LoseSightRadius           = 1800.f;
+    Sight->LoseSightRadius              = 1800.f;
     Sight->PeripheralVisionAngleDegrees = 35.f;   // half-angle
     Sight->AutoSuccessRangeFromLastSeenLocation = 100.f;
     Perc->ConfigureSense(*Sight);
@@ -45,9 +48,11 @@ AEnemyAIController::AEnemyAIController()
 
     Perc->SetDominantSense(Sight->GetSenseImplementation());
 
-    // Baseline sight radius (settings may override in OnPossess)
+    // Baseline sight radius (settings override in OnPossess)
     BaseSightRadius = Sight->SightRadius;
 }
+
+// --- Possession ---
 
 void AEnemyAIController::OnPossess(APawn* InPawn)
 {
@@ -56,7 +61,6 @@ void AEnemyAIController::OnPossess(APawn* InPawn)
     AEnemyCharacter* Enemy = Cast<AEnemyCharacter>(InPawn);
     if (!Enemy) return;
 
-    // Apply settings to perception.
     ConfigurePerception();
 
     // 1. Blackboard + tree.
@@ -75,7 +79,8 @@ void AEnemyAIController::OnPossess(APawn* InPawn)
         RunBehaviorTree(BehaviorTreeAsset);
     }
 
-    // 2. Write BB defaults AFTER RunBehaviorTree (doc §Init order).
+    // 2. Blackboard defaults. These are written after RunBehaviorTree (guide 5.1).
+    bCanSeeTarget = false;
     BBComp->SetValueAsVector(BBKeys::HomeLocation, Enemy->GetHomeLocation());
     BBComp->ClearValue(BBKeys::TargetActor);
     BBComp->ClearValue(BBKeys::LastKnownLocation);
@@ -83,37 +88,60 @@ void AEnemyAIController::OnPossess(APawn* InPawn)
     BBComp->ClearValue(BBKeys::CurrentPatrolPoint);
     BBComp->SetValue<UBlackboardKeyType_GameplayTag>(BBKeys::StateTag, EnemyTags::State_Patrol);
 
-    // 3. Bind status component.
-    if (UStatusEffectComponent* Status = Enemy->GetStatusComponent())
-    {
-        Status->OnStatusAdded.AddUObject(this, &AEnemyAIController::HandleStatusAdded);
-        Status->OnStatusRemoved.AddUObject(this, &AEnemyAIController::HandleStatusRemoved);
-    }
+    // 3. Listeners.
+    BindPawnDelegates();
 
-    // 4. Bind noise component (owned by controller per doc §5.3).
-    if (UNoiseQueueComponent* Noise = FindComponentByClass<UNoiseQueueComponent>())
-    {
-        Noise->OnNoiseOverload.AddUObject(this, &AEnemyAIController::HandleNoiseOverload);
-        Noise->OnInvestigateLocationChanged.AddUObject(this, &AEnemyAIController::HandleInvestigateLocationChanged);
-    }
-
-    // 5. Bind zone subsystem.
-    if (UPuzzleZoneSubsystem* Zones = GetWorld()->GetSubsystem<UPuzzleZoneSubsystem>())
-    {
-        Zones->OnZoneCompleted.AddDynamic(this, &AEnemyAIController::HandleZoneCompleted);
-    }
-
-    // 6. Bind perception.
-    if (UAIPerceptionComponent* Perc = GetPerceptionComponent())
-    {
-        Perc->OnTargetPerceptionUpdated.AddDynamic(this, &AEnemyAIController::HandleTargetPerceptionUpdated);
-    }
-
-    // 7. Notify character.
+    // 4. Notify character.
     Enemy->OnAIPossessed(this);
 }
 
+void AEnemyAIController::OnUnPossess()
+{
+    UnbindPawnDelegates();
+    Super::OnUnPossess();
+}
+
 void AEnemyAIController::EndPlay(const EEndPlayReason::Type Reason)
+{
+    UnbindPawnDelegates();
+    Super::EndPlay(Reason);
+}
+
+void AEnemyAIController::BindPawnDelegates()
+{
+    // Idempotent: clear any previous binding before adding new ones.
+    UnbindPawnDelegates();
+
+    if (AEnemyCharacter* Enemy = GetEnemyCharacter())
+    {
+        if (UStatusEffectComponent* Status = Enemy->GetStatusComponent())
+        {
+            Status->OnStatusAdded.AddUObject(this, &AEnemyAIController::HandleStatusAdded);
+            Status->OnStatusRemoved.AddUObject(this, &AEnemyAIController::HandleStatusRemoved);
+        }
+    }
+
+    if (NoiseQueueComp)
+    {
+        NoiseQueueComp->OnNoiseOverload.AddUObject(this, &AEnemyAIController::HandleNoiseOverload);
+        NoiseQueueComp->OnInvestigateLocationChanged.AddUObject(this, &AEnemyAIController::HandleInvestigateLocationChanged);
+    }
+
+    if (UWorld* World = GetWorld())
+    {
+        if (UPuzzleZoneSubsystem* Zones = World->GetSubsystem<UPuzzleZoneSubsystem>())
+        {
+            Zones->OnZoneCompleted.AddUniqueDynamic(this, &AEnemyAIController::HandleZoneCompleted);
+        }
+    }
+
+    if (UAIPerceptionComponent* Perc = GetPerceptionComponent())
+    {
+        Perc->OnTargetPerceptionUpdated.AddUniqueDynamic(this, &AEnemyAIController::HandleTargetPerceptionUpdated);
+    }
+}
+
+void AEnemyAIController::UnbindPawnDelegates()
 {
     if (AEnemyCharacter* Enemy = GetEnemyCharacter())
     {
@@ -122,25 +150,29 @@ void AEnemyAIController::EndPlay(const EEndPlayReason::Type Reason)
             Status->OnStatusAdded.RemoveAll(this);
             Status->OnStatusRemoved.RemoveAll(this);
         }
-        if (UNoiseQueueComponent* Noise = FindComponentByClass<UNoiseQueueComponent>())
-        {
-            Noise->OnNoiseOverload.RemoveAll(this);
-            Noise->OnInvestigateLocationChanged.RemoveAll(this);
-        }
     }
 
-    if (UPuzzleZoneSubsystem* Zones = GetWorld() ? GetWorld()->GetSubsystem<UPuzzleZoneSubsystem>() : nullptr)
+    if (NoiseQueueComp)
     {
-        Zones->OnZoneCompleted.RemoveAll(this);
+        NoiseQueueComp->OnNoiseOverload.RemoveAll(this);
+        NoiseQueueComp->OnInvestigateLocationChanged.RemoveAll(this);
+    }
+
+    if (UWorld* World = GetWorld())
+    {
+        if (UPuzzleZoneSubsystem* Zones = World->GetSubsystem<UPuzzleZoneSubsystem>())
+        {
+            Zones->OnZoneCompleted.RemoveAll(this);
+        }
     }
 
     if (UAIPerceptionComponent* Perc = GetPerceptionComponent())
     {
         Perc->OnTargetPerceptionUpdated.RemoveAll(this);
     }
-
-    Super::EndPlay(Reason);
 }
+
+// --- Accessors and shared state ---
 
 AEnemyCharacter* AEnemyAIController::GetEnemyCharacter() const
 {
@@ -152,6 +184,51 @@ UBehaviorTreeComponent* AEnemyAIController::GetBTComponent() const
     return Cast<UBehaviorTreeComponent>(BrainComponent);
 }
 
+AActor* AEnemyAIController::GetTargetActor() const
+{
+    const UBlackboardComponent* BB = GetBlackboardComponent();
+    return BB ? Cast<AActor>(BB->GetValueAsObject(BBKeys::TargetActor)) : nullptr;
+}
+
+bool AEnemyAIController::HasSoundOverload() const
+{
+    const AEnemyCharacter* Enemy = GetEnemyCharacter();
+    const UStatusEffectComponent* Status = Enemy ? Enemy->GetStatusComponent() : nullptr;
+    return Status && Status->HasStatus(EnemyTags::Status_SoundOverload);
+}
+
+bool AEnemyAIController::IsPursuing() const
+{
+    return GetTargetActor() != nullptr && (bCanSeeTarget || HasSoundOverload());
+}
+
+void AEnemyAIController::SetAIState(FGameplayTag NewState)
+{
+    if (UBlackboardComponent* BB = GetBlackboardComponent())
+    {
+        BB->SetValue<UBlackboardKeyType_GameplayTag>(BBKeys::StateTag, NewState);
+    }
+    if (AEnemyCharacter* Enemy = GetEnemyCharacter())
+    {
+        Enemy->RecalculateMovementStats();
+    }
+}
+
+void AEnemyAIController::SetTargetActor(AActor* Target)
+{
+    UBlackboardComponent* BB = GetBlackboardComponent();
+    if (!BB) return;
+
+    if (Target)
+    {
+        BB->SetValueAsObject(BBKeys::TargetActor, Target);
+    }
+    else
+    {
+        BB->ClearValue(BBKeys::TargetActor);
+    }
+}
+
 void AEnemyAIController::ConfigurePerception()
 {
     const UEnemyGameSettings* Settings = UEnemyGameSettings::Get();
@@ -161,8 +238,8 @@ void AEnemyAIController::ConfigurePerception()
     if (UAISenseConfig_Sight* Sight = Cast<UAISenseConfig_Sight>(
         Perc->GetSenseConfig(UAISense::GetSenseID<UAISense_Sight>())))
     {
-        Sight->SightRadius                = Settings->EnemySightRadius;
-        Sight->LoseSightRadius            = Settings->EnemySightRadius * 1.2f;
+        Sight->SightRadius                  = Settings->EnemySightRadius;
+        Sight->LoseSightRadius              = Settings->EnemySightRadius * 1.2f;
         Sight->PeripheralVisionAngleDegrees = Settings->EnemySightFOVDegrees * 0.5f;
         BaseSightRadius = Sight->SightRadius;
         Perc->ConfigureSense(*Sight);
@@ -201,7 +278,7 @@ void AEnemyAIController::RecalculateSightRange()
     {
         if (UStatusEffectComponent* Status = Enemy->GetStatusComponent())
         {
-            if (Status->HasStatus(EnemyTags::Status_Rage))
+            if (Status->HasStatus(EnemyTags::Status_Rage) && Settings)
             {
                 Radius *= Settings->RageSightMultiplier;
             }
@@ -217,9 +294,6 @@ void AEnemyAIController::RecalculateSightRange()
 
 void AEnemyAIController::HandleTargetPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus)
 {
-    UBlackboardComponent* BB = GetBlackboardComponent();
-    if (!BB) return;
-
     const FAISenseID SightID   = UAISense::GetSenseID<UAISense_Sight>();
     const FAISenseID HearingID = UAISense::GetSenseID<UAISense_Hearing>();
 
@@ -227,25 +301,39 @@ void AEnemyAIController::HandleTargetPerceptionUpdated(AActor* Actor, FAIStimulu
     {
         if (Stimulus.WasSuccessfullySensed())
         {
+            // Only chase things we can kill. Neutral props and NPCs are ignored.
+            if (!Cast<IKillable>(Actor)) return;
+
             bCanSeeTarget = true;
-            BB->SetValueAsObject(BBKeys::TargetActor, Actor);
+            SetTargetActor(Actor);
         }
         else
         {
             bCanSeeTarget = false;
-            // Write LKP before clearing TargetActor so Search has a destination.
-            if (AActor* Current = Cast<AActor>(BB->GetValueAsObject(BBKeys::TargetActor)))
+
+            // Only the tracked actor's loss matters. Losing sight of something
+            // else must not touch the target.
+            if (Actor == GetTargetActor())
             {
-                BB->SetValueAsVector(BBKeys::LastKnownLocation, Current->GetActorLocation());
+                if (UBlackboardComponent* BB = GetBlackboardComponent())
+                {
+                    BB->SetValueAsVector(BBKeys::LastKnownLocation, Actor->GetActorLocation());
+                }
+
+                // During SoundOverload the target stays, so the enemy keeps chasing by sound.
+                // HandleStatusRemoved clears it when the overload ends.
+                if (!HasSoundOverload())
+                {
+                    SetTargetActor(nullptr);
+                }
             }
-            BB->ClearValue(BBKeys::TargetActor);
         }
     }
     else if (Stimulus.Type == HearingID && Stimulus.WasSuccessfullySensed())
     {
-        if (UNoiseQueueComponent* Noise = FindComponentByClass<UNoiseQueueComponent>())
+        if (NoiseQueueComp)
         {
-            Noise->PushNoise(Stimulus.StimulusLocation, Actor);
+            NoiseQueueComp->PushNoise(Stimulus.StimulusLocation, Actor);
         }
     }
 }
@@ -254,8 +342,6 @@ void AEnemyAIController::HandleTargetPerceptionUpdated(AActor* Actor, FAIStimulu
 
 void AEnemyAIController::HandleStatusAdded(FGameplayTag Tag, UObject* MyInstigator)
 {
-    UBlackboardComponent* BB = GetBlackboardComponent();
-
     if (Tag.MatchesTagExact(EnemyTags::Status_Stunned))
     {
         if (UBehaviorTreeComponent* BT = GetBTComponent())
@@ -266,19 +352,16 @@ void AEnemyAIController::HandleStatusAdded(FGameplayTag Tag, UObject* MyInstigat
     }
     else if (Tag.MatchesTagExact(EnemyTags::Status_Blinded))
     {
-        // Doc §4.3: copy LKP before clearing TargetActor.
-        // BUT preserve TargetActor if Overload is keeping Chase alive — overload's
-        // job is "chase without sight", and blind without overload needs to fall to Search.
-        const bool bOverloadActive =
-            GetEnemyCharacter() && GetEnemyCharacter()->GetStatusComponent() &&
-            GetEnemyCharacter()->GetStatusComponent()->HasStatus(EnemyTags::Status_SoundOverload);
-
-        if (!bOverloadActive && BB)
+        // Save the last known location before dropping the target. Overload keeps tracking.
+        if (!HasSoundOverload())
         {
-            if (AActor* Current = Cast<AActor>(BB->GetValueAsObject(BBKeys::TargetActor)))
+            if (AActor* Current = GetTargetActor())
             {
-                BB->SetValueAsVector(BBKeys::LastKnownLocation, Current->GetActorLocation());
-                BB->ClearValue(BBKeys::TargetActor);
+                if (UBlackboardComponent* BB = GetBlackboardComponent())
+                {
+                    BB->SetValueAsVector(BBKeys::LastKnownLocation, Current->GetActorLocation());
+                }
+                SetTargetActor(nullptr);
             }
         }
         bCanSeeTarget = false;
@@ -290,24 +373,23 @@ void AEnemyAIController::HandleStatusAdded(FGameplayTag Tag, UObject* MyInstigat
     }
     else if (Tag.MatchesTagExact(EnemyTags::Status_SoundOverload))
     {
-        if (BB && MyInstigator)
+        // A noise only takes over the target if the source is killable, and never
+        // replaces a target we can currently see.
+        AActor* NoiseSource = Cast<AActor>(MyInstigator);
+        const bool bKeepVisibleTarget = bCanSeeTarget && GetTargetActor() != nullptr;
+        if (NoiseSource && Cast<IKillable>(NoiseSource) && !bKeepVisibleTarget)
         {
-            if (AActor* Inst = Cast<AActor>(MyInstigator))
-            {
-                BB->SetValueAsObject(BBKeys::TargetActor, Inst);
-            }
+            SetTargetActor(NoiseSource);
         }
     }
 }
 
 void AEnemyAIController::HandleStatusRemoved(FGameplayTag Tag, EStatusRemovalReason Reason)
 {
-    UBlackboardComponent* BB = GetBlackboardComponent();
-
     if (Tag.MatchesTagExact(EnemyTags::Status_Stunned))
     {
-        // GameMode owns the tree restart on reset — don't race it.
-        if (Reason != EStatusRemovalReason::Reset)
+        // The GameMode owns the tree restart during a reset.
+        if (Reason != EStatusRemovalReason::Reset && BehaviorTreeAsset)
         {
             if (UBehaviorTreeComponent* BT = GetBTComponent())
             {
@@ -329,9 +411,14 @@ void AEnemyAIController::HandleStatusRemoved(FGameplayTag Tag, EStatusRemovalRea
     }
     else if (Tag.MatchesTagExact(EnemyTags::Status_SoundOverload))
     {
-        if (!bCanSeeTarget && BB)
+        // Overload is over, so the noise queue's overload flag goes too.
+        if (NoiseQueueComp)
         {
-            BB->ClearValue(BBKeys::TargetActor);
+            NoiseQueueComp->ClearOverloadFlag();
+        }
+        if (!bCanSeeTarget)
+        {
+            SetTargetActor(nullptr);
         }
     }
 }
@@ -340,17 +427,17 @@ void AEnemyAIController::HandleStatusRemoved(FGameplayTag Tag, EStatusRemovalRea
 
 void AEnemyAIController::HandleNoiseOverload(AActor* MyInstigator)
 {
-    if (AEnemyCharacter* Enemy = GetEnemyCharacter())
+    AEnemyCharacter* Enemy = GetEnemyCharacter();
+    const UEnemyGameSettings* Settings = UEnemyGameSettings::Get();
+    if (!Enemy || !Settings) return;
+
+    if (UStatusEffectComponent* Status = Enemy->GetStatusComponent())
     {
-        if (UStatusEffectComponent* Status = Enemy->GetStatusComponent())
-        {
-            const UEnemyGameSettings* Settings = UEnemyGameSettings::Get();
-            Status->ApplyStatus(
-                EnemyTags::Status_SoundOverload,
-                Settings->NoiseOverloadSeconds,
-                EStatusStackPolicy::Refresh,
-                MyInstigator);
-        }
+        Status->ApplyStatus(
+            EnemyTags::Status_SoundOverload,
+            Settings->NoiseOverloadSeconds,
+            EStatusStackPolicy::Refresh,
+            MyInstigator);
     }
 }
 
@@ -379,30 +466,31 @@ void AEnemyAIController::HandleZoneCompleted(FGameplayTag /*ZoneId*/)
 void AEnemyAIController::ApplyRageIfThresholdMet()
 {
     UPuzzleZoneSubsystem* Zones = GetWorld() ? GetWorld()->GetSubsystem<UPuzzleZoneSubsystem>() : nullptr;
-    if (!Zones) return;
-
     const UEnemyGameSettings* Settings = UEnemyGameSettings::Get();
+    if (!Zones || !Settings) return;
+
     const int32 Total = Zones->GetTotalZoneCount();
     if (Total <= 0) return;
 
     const int32 Completed = Zones->GetCompletedCount();
     const int32 Threshold = FMath::CeilToInt(Total * Settings->RageThresholdRatio);
-
     if (Completed < Threshold) return;
 
     if (AEnemyCharacter* Enemy = GetEnemyCharacter())
     {
         if (UStatusEffectComponent* Status = Enemy->GetStatusComponent())
         {
-            // Infinite duration, Ignore stacking (idempotent).
+            // Infinite duration with Ignore stacking, so this is idempotent.
             Status->ApplyStatus(EnemyTags::Status_Rage, 0.0f, EStatusStackPolicy::Ignore, Enemy);
         }
     }
 }
 
+// --- Reset ---
+
 void AEnemyAIController::PrepareForReset()
 {
-    // 1. Stop BT + movement
+    // 1. Stop the tree and movement.
     if (UBehaviorTreeComponent* BT = GetBTComponent())
     {
         BT->StopTree(EBTStopMode::Safe);
@@ -410,48 +498,51 @@ void AEnemyAIController::PrepareForReset()
     StopMovement();
     bCanSeeTarget = false;
 
-    // 2-4. Clear component state
-    if (AEnemyCharacter* Enemy = GetEnemyCharacter())
-    {
-        if (UStatusEffectComponent* Status = Enemy->GetStatusComponent())
-        {
-            Status->ClearAll(EStatusRemovalReason::Reset);
-        }
-    }
-    if (UNoiseQueueComponent* Noise = FindComponentByClass<UNoiseQueueComponent>())
-    {
-        Noise->Clear();
-    }
-    if (UAIPerceptionComponent* Perc = GetPerceptionComponent())
-    {
-        Perc->ForgetAll();
-    }
-
-    // 5. Explicit per-key BB clear (RestartTree/StartTree do NOT reset BB memory)
+    // 2. Blackboard. The state goes first so the speed recalculation in step 3 sees Patrol.
     if (UBlackboardComponent* BB = GetBlackboardComponent())
     {
         BB->ClearValue(BBKeys::TargetActor);
         BB->ClearValue(BBKeys::LastKnownLocation);
         BB->ClearValue(BBKeys::InvestigateLocation);
         BB->ClearValue(BBKeys::CurrentPatrolPoint);
-        BB->SetValue<UBlackboardKeyType_GameplayTag>(BBKeys::StateTag, EnemyTags::State_Patrol);
-        // HomeLocation is preserved — it's still where the enemy respawns.
+        // HomeLocation is kept. It is still where the enemy respawns.
+    }
+    SetAIState(EnemyTags::State_Patrol);
+
+    // 3. Statuses. Reset reason, so Stunned does not restart the tree.
+    AEnemyCharacter* Enemy = GetEnemyCharacter();
+    if (Enemy)
+    {
+        if (UStatusEffectComponent* Status = Enemy->GetStatusComponent())
+        {
+            Status->ClearAll(EStatusRemovalReason::Reset);
+        }
     }
 
-    // 6. Teleport enemy home + reset patrol index
-    if (AEnemyCharacter* Enemy = GetEnemyCharacter())
+    // 4. Noise and perception.
+    if (NoiseQueueComp)
     {
-        Enemy->SetActorLocation(Enemy->GetHomeLocation());
+        NoiseQueueComp->Clear();
+    }
+    if (UAIPerceptionComponent* Perc = GetPerceptionComponent())
+    {
+        Perc->ForgetAll();
+    }
+
+    // 5. Move the enemy home and reset the patrol route.
+    if (Enemy)
+    {
+        Enemy->TeleportTo(Enemy->GetHomeLocation(), Enemy->GetActorRotation());
         if (UPatrolRouteComponent* Patrol = Enemy->GetPatrolComponent())
         {
             Patrol->ResetIndex();
         }
+        Enemy->RecalculateMovementStats();
     }
 }
 
 void AEnemyAIController::ResumeAfterReset()
 {
-    // 9. Clean tree start
     if (UBehaviorTreeComponent* BT = GetBTComponent())
     {
         if (BehaviorTreeAsset)

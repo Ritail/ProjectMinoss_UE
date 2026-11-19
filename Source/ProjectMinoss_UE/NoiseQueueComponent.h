@@ -20,11 +20,15 @@ public:
 	/** Called by the perception listener in AEnemyAIController. */
 	void PushNoise(const FVector& Location, AActor* Instigator);
 
+	/** Empties the queue and invalidates the investigate point. Used by reset. */
 	void Clear();
+
+	/** Called when SoundOverload ends. Only clears the flag, not the queue. */
+	void ClearOverloadFlag();
 
 	int32 GetQueueSize() const { return Queue.Num(); }
 
-	/** True while the queue is above threshold — controller reads this on ApplyStatus paths. */
+	/** True from the moment the queue triggers until the overload ends. */
 	bool IsOverloaded() const { return bOverloaded; }
 
 	FOnInvestigateLocationChanged OnInvestigateLocationChanged;
@@ -38,7 +42,11 @@ protected:
 private:
 	void EvaluateTrigger(AActor* LatestInstigator);
 
+	/** Broadcasts only when the investigate point actually changes. */
+	void BroadcastInvestigate(bool bValid, const FVector& Location);
+
 	FNoiseQueue Queue;
 	bool bOverloaded = false;
+	bool bLastInvestigateValid = false;
+	FVector LastInvestigateLocation = FVector::ZeroVector;
 };
-

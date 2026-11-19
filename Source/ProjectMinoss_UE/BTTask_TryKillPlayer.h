@@ -7,6 +7,8 @@
 
 class UAnimInstance;
 class UAnimMontage;
+class APawn;
+class AActor;
 
 UCLASS(meta=(DisplayName="Try Kill Player"))
 class PROJECTMINOSS_UE_API UBTTask_TryKillPlayer : public UBTTaskNode
@@ -24,7 +26,7 @@ class PROJECTMINOSS_UE_API UBTTask_TryKillPlayer : public UBTTaskNode
 	UPROPERTY(EditAnywhere, Category="Kill")
 	TObjectPtr<UAnimMontage> KillMontage;
 
-	/** Re-check range again after the montage ends (protects against windup dodges). */
+	/** Re-check range after the montage ends (protects against windup dodges). */
 	UPROPERTY(EditAnywhere, Category="Kill")
 	bool bRecheckRangeAfterMontage = true;
 
@@ -36,8 +38,10 @@ class PROJECTMINOSS_UE_API UBTTask_TryKillPlayer : public UBTTaskNode
 	UFUNCTION()
 	void OnKillMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 
-	void ApplyKill();
+	bool IsInKillRange(const APawn* EnemyPawn, const AActor* Target) const;
+	void ExecuteKill(AActor* Target, APawn* EnemyPawn);
 	void UnbindMontageDelegate();
+	void ResetCache();
 
 	UPROPERTY(Transient)
 	TObjectPtr<UBehaviorTreeComponent> CachedOwnerComp;

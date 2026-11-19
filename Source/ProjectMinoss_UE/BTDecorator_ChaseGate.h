@@ -2,15 +2,15 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "BehaviorTree/BTDecorator.h"
+#include "BehaviorTree/Decorators/BTDecorator_BlackboardBase.h"
 #include "BTDecorator_ChaseGate.generated.h"
 
 UCLASS(meta=(DisplayName="Chase Gate"))
-class PROJECTMINOSS_UE_API UBTDecorator_ChaseGate : public UBTDecorator
+class PROJECTMINOSS_UE_API UBTDecorator_ChaseGate : public UBTDecorator_BlackboardBase
 {
 	GENERATED_BODY()
 
-	public:
+public:
 	UBTDecorator_ChaseGate();
 
 	virtual bool CalculateRawConditionValue(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory) const override;
