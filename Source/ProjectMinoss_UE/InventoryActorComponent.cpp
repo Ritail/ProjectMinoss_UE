@@ -15,6 +15,33 @@ UInventoryActorComponent::UInventoryActorComponent()
 	// ...
 }
 
+void UInventoryActorComponent::AddKey(FGameplayTag KeyTag)
+{
+	// Tag vide ou clé déjà possédée : rien de nouveau, personne prévenir
+	if (!KeyTag.IsValid() || HasKey(KeyTag))
+	{
+
+		return;
+
+	}
+	Keys.AddTag(KeyTag);
+	OnKeyAdded.Broadcast(KeyTag);
+}
+
+void UInventoryActorComponent::UseKey(FGameplayTag KeyTag)
+{
+	if (Keys.HasTagExact(KeyTag))
+	{
+		Keys.RemoveTag(KeyTag);
+		OnKeyUsed.Broadcast(KeyTag);
+	}
+}
+
+bool UInventoryActorComponent::HasKey(FGameplayTag KeyTag) const
+{
+	return Keys.HasTagExact(KeyTag);
+}
+
 UInventoryActorComponent* UInventoryActorComponent::FindInventory(const AActor* Actor)
 {
 	

@@ -3,6 +3,8 @@
 
 #include "PlayerControllerHandler.h"
 
+#include "InventoryActorComponent.h"
+
 
 APlayerControllerHandler::APlayerControllerHandler()
 {
@@ -12,6 +14,17 @@ APlayerControllerHandler::APlayerControllerHandler()
 void APlayerControllerHandler::BeginPlay()
 {
 	Super::BeginPlay();
+	
+	if (UInventoryActorComponent* Inventory = UInventoryActorComponent::FindInventory(PlayerState))
+	{
+		Inventory->OnKeyAdded.AddDynamic(this,&APlayerControllerHandler::HandleKeyAdded);
+		Inventory->OnKeyUsed.AddDynamic(this,&APlayerControllerHandler::HandleKeyUsed);
+	}
+	else
+	{
+
+		UE_LOGFMT(LogTemp, Warning, "{0} : pas d'inventaire sur le PlayerState", GetName());
+	}
 	
 	if (!IsLocalController())
 	{
@@ -33,6 +46,24 @@ void APlayerControllerHandler::BeginPlay()
 	{
 
 		Subsystem->AddMappingContext(DefaultMappingContext, 0);
+	}
+}
+
+void APlayerControllerHandler::HandleKeyAdded(FGameplayTag KeyTag)
+{
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Yellow,
+			FString::Printf(TEXT("Clé %s ramassée"), *KeyTag.ToString()));
+	}
+}
+
+void APlayerControllerHandler::HandleKeyUsed(FGameplayTag KeyTag)
+{
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Red,
+			FString::Printf(TEXT("Clé %s utilisée !"), *KeyTag.ToString()));
 	}
 }
 

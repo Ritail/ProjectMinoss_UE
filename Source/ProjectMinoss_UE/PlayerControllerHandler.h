@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "InputMappingContext.h"
 #include "EnhancedInputComponent.h"
+#include "GameFramework/PlayerState.h"
 #include "InputAction.h"
 #include "EnhancedInputSubsystems.h"
 #include "GameFramework/PlayerController.h"
@@ -35,4 +36,10 @@ protected:
 public:
 	APlayerControllerHandler();
 	
+private: 
+	UFUNCTION()
+	void HandleKeyAdded(FGameplayTag KeyTag);
+	
+	UFUNCTION()
+	void HandleKeyUsed(FGameplayTag KeyTag);
 };

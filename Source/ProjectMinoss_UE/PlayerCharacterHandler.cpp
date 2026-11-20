@@ -14,7 +14,6 @@ APlayerCharacterHandler::APlayerCharacterHandler()
 	GetCapsuleComponent()->SetCapsuleHalfHeight(100.0f);
 	GetCapsuleComponent()->InitCapsuleSize(50.0f, 100.0f);
 	
-	
 	GetMesh()->SetSkeletalMeshAsset(SkeletalMesh);
 	GetMesh()->SetRelativeRotation(FRotator(0.0f, -90.0f, 0.0f));
 	GetMesh()->SetRelativeLocation(FVector(0.0f, 0.0f, -100.0f));
@@ -35,6 +34,8 @@ APlayerCharacterHandler::APlayerCharacterHandler()
 	SpringArm->bUsePawnControlRotation = true;
 	// 4. La caméra se rapproche au lieu de traverser les murs
 	SpringArm->bDoCollisionTest = true;
+	
+	PhysicsHandle = CreateDefaultSubobject<UPhysicsHandleComponent>(TEXT("PhysicsHandle"));
 }
 
 // Called when the game starts or when spawned
@@ -49,6 +50,17 @@ void APlayerCharacterHandler::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+	UPrimitiveComponent* Held = PhysicsHandle->GetGrabbedComponent();
+	if (Held && !IsValid(Held))
+	{
+		// La caisse a été détruite pendant le transport (étape 5) : on lâche
+		PhysicsHandle->ReleaseComponent();
+	}
+	else if (Held)
+	{
+		// Le point cible suit Megan, dans la direction de la caméra
+		PhysicsHandle->SetTargetLocation(GetActorLocation() + Camera->GetForwardVector() * HoldDistance);
+	}
 }
 
 // Called to bind functionality to input
@@ -63,6 +75,31 @@ void APlayerCharacterHandler::SetupPlayerInputComponent(UInputComponent* PlayerI
 		Input->BindAction(LookAction, ETriggerEvent::Triggered,this,&APlayerCharacterHandler::PlayerLook);
 		Input->BindAction(CrouchAction, ETriggerEvent::Triggered,this,&APlayerCharacterHandler::PlayerCrouch);
 		Input->BindAction(InteractAction, ETriggerEvent::Triggered,this,&APlayerCharacterHandler::Interacte);
+		
+		if (GrabAction)
+		{
+			// Started : un seul appel par clic
+			Input->BindAction(GrabAction, ETriggerEvent::Started, this, &APlayerCharacterHandler::Grab);
+		}
+		else
+		{
+
+			UE_LOGFMT(LogTemp, Error, "{0} : GrabAction non assignée",
+
+			GetName());
+		}
+		if (ThrowAction)
+		{
+
+			Input->BindAction(ThrowAction, ETriggerEvent::Started, this,&APlayerCharacterHandler::Throw);
+		}
+		else
+		{
+
+			UE_LOGFMT(LogTemp, Error, "{0} : ThrowAction non assignée",
+
+			GetName());
+		}
 	}
 	else
 	{
@@ -182,6 +219,77 @@ void APlayerCharacterHandler::Interacte()
 	{
 		IInteractable::Execute_Interact(Target, this);
 	}
+}
+
+void APlayerCharacterHandler::Grab()
+{
+	// Le même bouton attrape et pose
+	if (PhysicsHandle->GetGrabbedComponent())
+	{
+		Release();
+		return;
+	}
+	
+	FHitResult Hit;
+	if (!TraceFromCamera(GrabRange, Hit))
+	{
+		return;
+	}
+	
+	// On n'attrape que ce que le moteur physique déplace
+	UPrimitiveComponent* Target = Hit.GetComponent();
+	if (!Target || !Target->IsSimulatingPhysics())
+	{
+		return;
+	}
+	
+	if (Target->GetMass() > MaxGrabMassKg)
+	{
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 2.f,
+
+			FColor::Orange, TEXT("Trop lourd"));
+		}
+		return;
+	}
+	// Pendant le transport, la caisse ne pousse pas Megan
+	Target->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
+	
+	// ... et n'arrête pas le rayon de E : on peut ouvrir une porte en portant une caisse
+
+	Target->SetCollisionResponseToChannel(ECC_Interaction, ECR_Ignore);
+	PhysicsHandle->GrabComponentAtLocationWithRotation(Target, NAME_None,
+
+	Hit.ImpactPoint, Target->GetComponentRotation());
+}
+
+void APlayerCharacterHandler::Release()
+{
+	UPrimitiveComponent* Held = PhysicsHandle->GetGrabbedComponent();
+	if (!Held)
+	{
+		return;
+	}
+	Held->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
+	Held->SetCollisionResponseToChannel(ECC_Interaction, ECR_Block);
+	PhysicsHandle->ReleaseComponent();
+}
+
+void APlayerCharacterHandler::Throw()
+{
+	UPrimitiveComponent* Held = PhysicsHandle->GetGrabbedComponent();
+	if (!Held)
+	{
+
+		return;
+
+	}
+	// D'abord lâcher : sinon le Physics Handle retient la caisse etannule l'impulsion
+	Release();
+	// bVelChange = true : ThrowSpeed est la vitesse donnée, quelle que soit la masse
+
+	Held->AddImpulse(Camera->GetForwardVector() * ThrowSpeed, NAME_None,true);
 }
 
 FText APlayerCharacterHandler::GetInteractionText() const
