@@ -466,21 +466,25 @@ void AEnemyAIController::HandleZoneCompleted(FGameplayTag /*ZoneId*/)
 void AEnemyAIController::ApplyRageIfThresholdMet()
 {
     UPuzzleZoneSubsystem* Zones = GetWorld() ? GetWorld()->GetSubsystem<UPuzzleZoneSubsystem>() : nullptr;
-    const UEnemyGameSettings* Settings = UEnemyGameSettings::Get();
-    if (!Zones || !Settings) return;
+    if (!Zones) return;
 
+    const UEnemyGameSettings* Settings = UEnemyGameSettings::Get();
     const int32 Total = Zones->GetTotalZoneCount();
     if (Total <= 0) return;
 
     const int32 Completed = Zones->GetCompletedCount();
-    const int32 Threshold = FMath::CeilToInt(Total * Settings->RageThresholdRatio);
+
+    // Epsilon guards against float precision at integer boundaries
+    // (e.g. 3 * 0.6667 = 2.0001, which would ceil to 3 without this).
+    const int32 Threshold = FMath::CeilToInt(
+        Total * Settings->RageThresholdRatio - 0.001f);
+
     if (Completed < Threshold) return;
 
     if (AEnemyCharacter* Enemy = GetEnemyCharacter())
     {
         if (UStatusEffectComponent* Status = Enemy->GetStatusComponent())
         {
-            // Infinite duration with Ignore stacking, so this is idempotent.
             Status->ApplyStatus(EnemyTags::Status_Rage, 0.0f, EStatusStackPolicy::Ignore, Enemy);
         }
     }

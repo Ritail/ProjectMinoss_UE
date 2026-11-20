@@ -22,6 +22,9 @@ class PROJECTMINOSS_UE_API AEnemyGameMode : public AGameModeBase
 	/** Fires exactly once at the end of ResetGame. UI/audio/VFX bind here. */
 	UPROPERTY(BlueprintAssignable, Category="Game")
 	FOnGameReset OnGameReset;
+	
+	UFUNCTION(Exec)
+	void Debug_CompleteZone(FName ZoneTagName);
 
 	protected:
 	virtual void StartPlay() override;

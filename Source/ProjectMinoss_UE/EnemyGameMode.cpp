@@ -98,3 +98,21 @@ void AEnemyGameMode::ResetPlayerAndWorld_Implementation(APawn* PlayerPawn)
         Health->Revive();
     }
 }
+
+// EnemyGameMode.cpp
+void AEnemyGameMode::Debug_CompleteZone(FName ZoneTagName)
+{
+    UPuzzleZoneSubsystem* Zones = GetWorld() ? GetWorld()->GetSubsystem<UPuzzleZoneSubsystem>() : nullptr;
+    if (!Zones) return;
+
+    const FGameplayTag Tag = FGameplayTag::RequestGameplayTag(ZoneTagName, /*ErrorIfNotFound=*/false);
+    if (!Tag.IsValid())
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[Debug] Unknown zone tag: %s"), *ZoneTagName.ToString());
+        return;
+    }
+
+    Zones->MarkZoneCompleted(Tag);
+    UE_LOG(LogTemp, Log, TEXT("[Debug] Completed zone %s. Completed: %d / %d"),
+        *ZoneTagName.ToString(), Zones->GetCompletedCount(), Zones->GetTotalZoneCount());
+}
