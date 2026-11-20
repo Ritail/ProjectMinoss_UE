@@ -1,12 +1,13 @@
 ﻿<wpf:ResourceDictionary xml:space="preserve" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:s="clr-namespace:System;assembly=mscorlib" xmlns:ss="urn:shemas-jetbrains-com:settings-storage-xaml" xmlns:wpf="http://schemas.microsoft.com/winfx/2006/xaml/presentation">
-	<s:String x:Key="/Default/Environment/UnitTesting/UnitTestSessionStore/Sessions/=1d6318a9_002D1242_002D44ab_002Da96d_002D32a945c0febe/@EntryIndexedValue">&lt;SessionState ContinuousTestingMode="0" Name="NoiseQueue" xmlns="urn:schemas-jetbrains-com:jetbrains-ut-session"&gt;&#xD;
+	
+	
+	
+	<s:String x:Key="/Default/Environment/UnitTesting/UnitTestSessionStore/Sessions/=58c56b00_002Df81e_002D48fd_002Da74f_002Dc8e84271fcf4/@EntryIndexedValue">&lt;SessionState ContinuousTestingMode="0" Name="Continuous Testing" xmlns="urn:schemas-jetbrains-com:jetbrains-ut-session"&gt;&#xD;
+  &lt;Solution /&gt;&#xD;
+&lt;/SessionState&gt;</s:String>
+	<s:String x:Key="/Default/Environment/UnitTesting/UnitTestSessionStore/Sessions/=bd6bc3b3_002D961a_002D463b_002Db60e_002D0601379e7640/@EntryIndexedValue">&lt;SessionState ContinuousTestingMode="0" IsActive="True" Name="NoiseQueue" xmlns="urn:schemas-jetbrains-com:jetbrains-ut-session"&gt;&#xD;
   &lt;TestAncestor&gt;&#xD;
-    &lt;TestId&gt;UnrealTest::3B93F0F9-E15B-3B4E-3ABA-D353796A87BF::::Enemy.NoiseQueue&lt;/TestId&gt;&#xD;
+    &lt;TestId&gt;UnrealTest::3B93F0F9-E15B-3B4E-3ABA-D353796A87BF::::ProjectMinoss.NoiseQueue&lt;/TestId&gt;&#xD;
   &lt;/TestAncestor&gt;&#xD;
 &lt;/SessionState&gt;</s:String>
-	<s:String x:Key="/Default/Environment/UnitTesting/UnitTestSessionStore/Sessions/=58c44b65_002D5e16_002D4614_002Dbae0_002D9b2449d55b55/@EntryIndexedValue">&lt;SessionState ContinuousTestingMode="0" Name="All tests in category 'EngineFilter'" xmlns="urn:schemas-jetbrains-com:jetbrains-ut-session"&gt;&#xD;
-  &lt;Category&gt;EngineFilter&lt;/Category&gt;&#xD;
-&lt;/SessionState&gt;</s:String>
-	<s:String x:Key="/Default/Environment/UnitTesting/UnitTestSessionStore/Sessions/=82674805_002D4f49_002D472b_002Db2a7_002Dc0aa68e56c20/@EntryIndexedValue">&lt;SessionState ContinuousTestingMode="0" Name="All tests in category 'EditorContext'" xmlns="urn:schemas-jetbrains-com:jetbrains-ut-session"&gt;&#xD;
-  &lt;Category&gt;EditorContext&lt;/Category&gt;&#xD;
-&lt;/SessionState&gt;</s:String></wpf:ResourceDictionary>
+	</wpf:ResourceDictionary>

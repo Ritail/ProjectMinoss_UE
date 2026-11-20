@@ -24,18 +24,94 @@ void FNoiseQueue::PurgeExpired(double Now)
 }
 
 #if WITH_DEV_AUTOMATION_TESTS
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNoiseQueueTest, "Enemy.NoiseQueue", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
-bool FNoiseQueueTest::RunTest(const FString&)
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FNoiseQueueTest,
+    "ProjectMinoss.NoiseQueue",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FNoiseQueueTest::RunTest(const FString& /*Parameters*/)
 {
-	FNoiseQueue Q;
-	Q.Configure(3, 4.0);
-	Q.Push({FVector::ZeroVector, nullptr, 0.0}, 0.0);
-	Q.Push({FVector::ZeroVector, nullptr, 1.0}, 1.0);
-	TestFalse(TEXT("Two noises should not trigger"), Q.ShouldTrigger());
-	Q.Push({FVector::ZeroVector, nullptr, 2.0}, 2.0);
-	TestTrue(TEXT("Three noises should trigger"), Q.ShouldTrigger());
-	Q.PurgeExpired(10.0);
-	TestEqual(TEXT("All should expire at t=10"), Q.Num(), 0);
-	return true;
+    using FQ = FNoiseQueue;
+
+    // --- Test 1: threshold not met under the configured count ---
+    {
+        FQ Q;
+        Q.Configure(/*Threshold=*/3, /*Window=*/4.0);
+        Q.Push({FVector::ZeroVector, nullptr, 0.0}, 0.0);
+        Q.Push({FVector::ZeroVector, nullptr, 1.0}, 1.0);
+        TestFalse(TEXT("2 of 3 noises should not trigger"), Q.ShouldTrigger());
+        TestEqual(TEXT("queue should hold 2 records"), Q.Num(), 2);
+    }
+
+    // --- Test 2: threshold met ---
+    {
+        FQ Q;
+        Q.Configure(3, 4.0);
+        Q.Push({FVector::ZeroVector, nullptr, 0.0}, 0.0);
+        Q.Push({FVector::ZeroVector, nullptr, 1.0}, 1.0);
+        Q.Push({FVector::ZeroVector, nullptr, 2.0}, 2.0);
+        TestTrue(TEXT("3 of 3 noises should trigger"), Q.ShouldTrigger());
+    }
+
+    // --- Test 3: sliding window expires old records ---
+    {
+        FQ Q;
+        Q.Configure(3, 4.0);
+        Q.Push({FVector::ZeroVector, nullptr, 0.0}, 0.0);
+        Q.Push({FVector::ZeroVector, nullptr, 1.0}, 1.0);
+        // Advance to t=6.0 — both records are now well past the 4s window.
+        Q.PurgeExpired(6.0);
+        TestEqual(TEXT("both records should have expired"), Q.Num(), 0);
+        TestFalse(TEXT("no records → should not trigger"), Q.ShouldTrigger());
+    }
+
+    // --- Test 3b: boundary semantics — record at exactly Now-Window survives ---
+    {
+        FQ Q;
+        Q.Configure(3, 4.0);
+        Q.Push({FVector::ZeroVector, nullptr, 1.0}, 1.0);
+        // At Now=5.0, the record is exactly 4.0s old — the boundary is inclusive.
+        Q.PurgeExpired(5.0);
+        TestEqual(TEXT("record exactly at window boundary survives"), Q.Num(), 1);
+    }
+
+    // --- Test 4: newest survives, oldest purged ---
+    {
+        FQ Q;
+        Q.Configure(3, 4.0);
+        Q.Push({FVector::ZeroVector, nullptr, 0.0}, 0.0);
+        Q.Push({FVector::ZeroVector, nullptr, 3.0}, 3.0);
+        Q.PurgeExpired(4.5);  // t=0 expired (>4s old), t=3 alive (1.5s old)
+        TestEqual(TEXT("only the t=3 record should remain"), Q.Num(), 1);
+        const FNoiseRecord* Latest = Q.Latest();
+        TestNotNull(TEXT("Latest should return the surviving record"), Latest);
+        if (Latest) TestEqual(TEXT("Latest timestamp should be 3.0"), Latest->TimeStamp, 3.0);
+    }
+
+    // --- Test 5: Latest() returns the newest by insertion order ---
+    {
+        FQ Q;
+        Q.Configure(3, 4.0);
+        Q.Push({FVector(1,0,0), nullptr, 0.0}, 0.0);
+        Q.Push({FVector(2,0,0), nullptr, 1.0}, 1.0);
+        const FNoiseRecord* Latest = Q.Latest();
+        TestNotNull(TEXT("Latest should be non-null"), Latest);
+        if (Latest) TestTrue(TEXT("Latest should be the second push"), Latest->Location.Equals(FVector(2,0,0)));
+    }
+
+    // --- Test 6: Clear wipes everything ---
+    {
+        FQ Q;
+        Q.Configure(3, 4.0);
+        Q.Push({FVector::ZeroVector, nullptr, 0.0}, 0.0);
+        Q.Push({FVector::ZeroVector, nullptr, 1.0}, 1.0);
+        Q.Clear();
+        TestEqual(TEXT("Clear should empty the queue"), Q.Num(), 0);
+        TestFalse(TEXT("Clear → should not trigger"), Q.ShouldTrigger());
+    }
+
+    return true;
 }
-#endif
+
+#endif // WITH_DEV_AUTOMATION_TESTS
