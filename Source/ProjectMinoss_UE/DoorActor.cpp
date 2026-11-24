@@ -40,7 +40,7 @@ void ADoorActor::OnConstruction(const FTransform& Transform)
 {
 	Super::OnConstruction(Transform);
 
-	if (!bIsUsedKey)
+	if (!KeyData)
 	{
 		return;
 	}
