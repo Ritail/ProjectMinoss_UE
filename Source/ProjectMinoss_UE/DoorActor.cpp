@@ -82,6 +82,11 @@ void ADoorActor::Tick(float DeltaTime)
 
 void ADoorActor::Interact_Implementation(AActor* InteractingActor)
 {
+	if (bIsPressurePlate)
+	{
+		return;
+	}
+	
 	if (RequiredKey.IsValid())
 	{
 		UInventoryActorComponent* Inventory = UInventoryActorComponent::FindInventory(InteractingActor);
@@ -123,6 +128,11 @@ FText ADoorActor::GetInteractionText_Implementation() const
 		}
 
 		return FText::FromString(TEXT("Fermer"));
+	}
+
+	if (bIsPressurePlate)
+	{
+		return FText::FromString(bIsOpen ? TEXT("Fermer") : TEXT("Verrouillée par une plaque"));
 	}
 	
 	return FText::FromString(bIsOpen ? TEXT("Fermer") : TEXT("Ouvrir"));

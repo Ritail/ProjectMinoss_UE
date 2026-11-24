@@ -52,6 +52,8 @@ protected:
 	bool bOpensWithKey = false;
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly,SaveGame ,Category = "State")
 	bool bIsOpen = false;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly,SaveGame ,Category = "State")
+	bool bIsPressurePlate = false;
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,SaveGame ,Category = "Key")
 	bool bIsUsedKey;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Key",
