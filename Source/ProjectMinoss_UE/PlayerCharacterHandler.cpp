@@ -9,7 +9,8 @@ APlayerCharacterHandler::APlayerCharacterHandler()
 {
  	// Set this character to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
-
+	PrimaryActorTick.TickGroup = TG_PrePhysics;
+	
 	GetCapsuleComponent()->SetCapsuleRadius(50.5f);
 	GetCapsuleComponent()->SetCapsuleHalfHeight(100.0f);
 	GetCapsuleComponent()->InitCapsuleSize(50.0f, 100.0f);
@@ -36,6 +37,9 @@ APlayerCharacterHandler::APlayerCharacterHandler()
 	SpringArm->bDoCollisionTest = true;
 	
 	PhysicsHandle = CreateDefaultSubobject<UPhysicsHandleComponent>(TEXT("PhysicsHandle"));
+	
+	AddTickPrerequisiteComponent(GetMesh());// l'actor tick après l'anim
+	PhysicsHandle->AddTickPrerequisiteActor(this);
 }
 
 // Called when the game starts or when spawned
@@ -51,15 +55,25 @@ void APlayerCharacterHandler::Tick(float DeltaTime)
 	Super::Tick(DeltaTime);
 
 	UPrimitiveComponent* Held = PhysicsHandle->GetGrabbedComponent();
-	if (Held && !IsValid(Held))
+	if (!Held) return;
+	
+	if (!IsValid(Held))
 	{
 		// La caisse a été détruite pendant le transport (étape 5) : on lâche
 		PhysicsHandle->ReleaseComponent();
 	}
-	else if (Held)
+	else
 	{
 		// Le point cible suit Megan, dans la direction de la caméra
-		PhysicsHandle->SetTargetLocation(GetActorLocation() + Camera->GetForwardVector() * HoldDistance);
+		// PhysicsHandle->SetTargetLocation(GetActorLocation() + Camera->GetForwardVector() * HoldDistance);
+		
+		// Held->IgnoreActorWhenMoving(this, true);
+		// Held->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
+		
+		USkeletalMeshComponent* MeshComp = GetMesh();
+		const FTransform HandTrans = MeshComp->GetSocketTransform(TEXT("GrabSocket"),RTS_World);
+		
+		PhysicsHandle->SetTargetLocationAndRotation(HandTrans.GetLocation(),HandTrans.Rotator());
 	}
 }
 
@@ -253,15 +267,19 @@ void APlayerCharacterHandler::Grab()
 		}
 		return;
 	}
-	// Pendant le transport, la caisse ne pousse pas Megan
 	Target->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
-	
-	// ... et n'arrête pas le rayon de E : on peut ouvrir une porte en portant une caisse
-
 	Target->SetCollisionResponseToChannel(ECC_Interaction, ECR_Ignore);
-	PhysicsHandle->GrabComponentAtLocationWithRotation(Target, NAME_None,
+	Target->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
 
-	Hit.ImpactPoint, Target->GetComponentRotation());
+	PhysicsHandle->bInterpolateTarget = true;
+	PhysicsHandle->SetLinearStiffness(3000.f);   // à ajuster
+	PhysicsHandle->SetLinearDamping(200.f);
+	PhysicsHandle->SetAngularStiffness(3000.f);
+	PhysicsHandle->SetAngularDamping(200.f);
+	PhysicsHandle->SetInterpolationSpeed(30.f);
+	
+	PhysicsHandle->GrabComponentAtLocationWithRotation(
+		Target, NAME_None, Target->GetComponentLocation(), Target->GetComponentRotation());
 }
 
 void APlayerCharacterHandler::Release()
@@ -271,9 +289,11 @@ void APlayerCharacterHandler::Release()
 	{
 		return;
 	}
+	PhysicsHandle->ReleaseComponent();
+	
 	Held->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
 	Held->SetCollisionResponseToChannel(ECC_Interaction, ECR_Block);
-	PhysicsHandle->ReleaseComponent();
+	Held->SetCollisionResponseToChannel(ECC_Camera, ECR_Block);
 }
 
 void APlayerCharacterHandler::Throw()
