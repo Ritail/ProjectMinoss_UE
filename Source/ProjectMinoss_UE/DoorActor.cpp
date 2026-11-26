@@ -82,7 +82,7 @@ void ADoorActor::Tick(float DeltaTime)
 
 void ADoorActor::Interact_Implementation(AActor* InteractingActor)
 {
-	if (bIsPressurePlate)
+	if (bIsPressurePlate || bIsDoorController)
 	{
 		return;
 	}
